@@ -1,20 +1,64 @@
 <?php
 	interface template_cache
 	{
-		static public function is_cached($name);
-		static public function store($name, $data);
-		static public function execute($name);
+		public function is_cached($name);
+		public function store($name, $data);
+		public function execute($name);
+	}
+	
+	class template_file_cache implements template_cache
+	{
+		public $path;
+		public $memcache = array();
+		
+		public function __construct($path) {
+			$this->path = $path;
+			if (!is_dir($this->path)) @mkdir($this->path, 0777);
+		}
+
+		protected function __locate($name) {
+			return $this->path . '/' . urlencode($name) . '.cache';
+		}
+	
+		public function is_cached($name) {
+			$file = $this->__locate($name);
+			return file_exists($file);
+		}
+
+		public function store($name, $data) {
+			$file = $this->__locate($name);
+			@file_put_contents($file, $data);
+			$this->memcache[$name] = $data;
+		}
+
+		public function execute($name) {
+			$file = $this->__locate($name);
+			if (is_readable($file)) {
+				require($file);
+			} else if (isset($this->memcache[$name])) {
+				eval('?>' . $this->memcache[$name]);
+			} else {
+				throw(new Exception("Can't load template cache '{$name}'"));
+			}
+		}
 	}
 
 	class template
 	{
 		public $path;
+		public $cache;
 		public $plugins = array();
 		public $tags    = array();
 		public $blocks  = array();
 
-		public function __construct($path) {
+		public function __construct($path, $cache = './phpste_cache') {
+			if (is_string($cache)) $cache = new template_file_cache($cache);
 			$this->path = realpath($path);
+			$this->cache = $cache;
+			
+			if (!($cache instanceof template_cache)) {
+				throw(new Exception("Cache must implement the interface 'template_cache'."));
+			}
 
 			// Load the base plugins.
 			$this->plugin('template_base');
@@ -28,7 +72,7 @@
 		public function get_contents($name) {
 			$rname = realpath("{$this->path}/{$name}.php");
 			if (substr_compare($this->path, $rname, 0, strlen($this->path), false) != 0) {
-				throw(new Exception("Template out of the safe path."));
+				throw(new Exception("Template '{$rname}' out of the safe path '{$this->path}'."));
 			}
 			return file_get_contents($rname);
 		}
@@ -64,6 +108,21 @@
 			$method = "tag_{$node_name}";
 
 			return $class::$method($node);
+		}
+		
+		public function show($name) {
+			if (!$this->cache->is_cached($name)) {
+				$this->cache->store($name, (string)$this->parse_file($name));
+			}
+			$this->cache->execute($name);
+		}
+		
+		public function get($name) {
+			ob_start();
+			{
+				$this->show($name);
+			}
+			return ob_get_clean();
 		}
 	}
 	
@@ -243,7 +302,6 @@
 		
 		static public function tag_extends(template_node $node) {
 			$node->template_node_parser->tree = $node->template->parse_file($node->params['name']);
-			echo "extends!";
 		}
 		
 		static public function tag_putblock(template_node $node) {
