@@ -1,12 +1,12 @@
 <?php
-	interface template_cache
+	interface ste_cache
 	{
 		public function is_cached($name);
 		public function store($name, $data);
 		public function execute($name);
 	}
 	
-	class template_file_cache implements template_cache
+	class ste_file_cache implements ste_cache
 	{
 		public $path;
 		public $memcache = array();
@@ -43,7 +43,7 @@
 		}
 	}
 
-	class template
+	class ste
 	{
 		public $path;
 		public $cache;
@@ -52,16 +52,16 @@
 		public $blocks  = array();
 
 		public function __construct($path, $cache = './phpste_cache') {
-			if (is_string($cache)) $cache = new template_file_cache($cache);
+			if (is_string($cache)) $cache = new ste_file_cache($cache);
 			$this->path = realpath($path);
 			$this->cache = $cache;
 			
-			if (!($cache instanceof template_cache)) {
-				throw(new Exception("Cache must implement the interface 'template_cache'."));
+			if (!($cache instanceof ste_cache)) {
+				throw(new Exception("Cache must implement the interface 'ste_cache'."));
 			}
 
 			// Load the base plugins.
-			$this->plugin('template_base');
+			$this->plugin('ste_plugin_base');
 		}
 
 		// Loads a plugin.
@@ -89,7 +89,7 @@
 		
 		public function parse($data) {
 			$this->parse_init();
-			return template_node_parser::get(
+			return ste_node_parser::get(
 				$this,
 				preg_split('@(\{[^}]*\})@Umsi', $data, -1, PREG_SPLIT_DELIM_CAPTURE)
 			);
@@ -99,7 +99,7 @@
 			return $this->parse($this->get_contents($name));
 		}
 		
-		public function process_block(template_node $node) {
+		public function process_block(ste_node $node) {
 			$node_name = $node->name;
 
 			if (!isset($this->tags[$node_name])) throw(new Exception("Unknown tag '{$node_name}'"));
@@ -126,11 +126,11 @@
 		}
 	}
 	
-	class template_node
+	class ste_node
 	{
 		public $ref;
 		public $is_root = false;
-		public $template_node_parser, $template;
+		public $ste_node_parser, $ste;
 		public $data, $name = 'unknown', $line = -1, $params = array();
 		public $a = '', $b = array(), $c = '';
 		
@@ -143,9 +143,9 @@
 			$this->b[] = $v;
 		}
 
-		public function __construct(template_node_parser $template_node_parser) {
-			$this->template_node_parser = $template_node_parser;
-			$this->template = $template_node_parser->template;
+		public function __construct(ste_node_parser $ste_node_parser) {
+			$this->ste_node_parser = $ste_node_parser;
+			$this->ste = $ste_node_parser->ste;
 		}
 		
 		public function __tostring() {
@@ -155,7 +155,7 @@
 
 		public function literal() {
 			if (isset($this->ref)) return $this->ref->literal();
-			foreach ($this->b as &$v) { if ($v instanceof template_node) return false; }
+			foreach ($this->b as &$v) { if ($v instanceof ste_node) return false; }
 			return implode('', $this->b);
 		}
 		
@@ -166,19 +166,19 @@
 		}
 		
 		public function createnode() {
-			return new static($this->template_node_parser);
+			return new static($this->ste_node_parser);
 		}
 	}
 
-	class template_node_parser
+	class ste_node_parser
 	{
 		public $tokens, $n, $count;
 		public $tree;
-		public $template;
+		public $ste;
 		public $line;
 		
-		public function __construct(template $template, &$tokens, $name = 'unknown') {
-			$this->template = $template;
+		public function __construct(ste $ste, &$tokens, $name = 'unknown') {
+			$this->ste = $ste;
 			$this->tokens = $tokens;
 			$this->name = $name;
 			$this->line = 1;
@@ -189,12 +189,12 @@
 		}
 		
 		public function createnode($current_line = -1) {
-			$node = new template_node($this);
+			$node = new ste_node($this);
 			$node->line = $current_line;
 			return $node;
 		}
 		
-		public function parse_params(template_node $node, $string) {
+		public function parse_params(ste_node $node, $string) {
 			$node->data = $string;
 			@list($node->name, $params) = explode(' ', $node->data, 2);
 			preg_match_all('/(\\w+)=(\'[^\']+\'|"[^"]+"|\\S+)/', $params, $matches, PREG_SET_ORDER);
@@ -226,7 +226,7 @@
 							if ($data != $parent_node->name) {
 								throw(new Exception("Mismatch opening/closing tag. Opening:({$parent_node->name}:{$parent_node->line}) Closing({$data}:{$current_line})"));
 							}
-							$this->template->process_block($parent_node);
+							$this->ste->process_block($parent_node);
 
 							return $parent_node;
 						break;
@@ -234,7 +234,7 @@
 						case '!':
 							$node = $this->createnode($current_line);
 							$this->parse_params($node, substr($c, 2, -1));
-							$this->template->process_block($node);
+							$this->ste->process_block($node);
 							$parent_node->add($node);
 						break;
 						// Variables.
@@ -264,28 +264,28 @@
 		}
 
 		// Static method to obtain a parsed tree.
-		static public function get(template $template, $tokens) {
-			$tp = new static($template, $tokens);
+		static public function get(ste $ste, $tokens) {
+			$tp = new static($ste, $tokens);
 			$tp->process();
 			return $tp->tree;
 		}
 	}
 	
-	class template_base
+	class ste_plugin_base
 	{
-		static public function tag_block(template_node $node) {
+		static public function tag_block(ste_node $node) {
 			$block_id = $node->params['id'];
-			$block = &$node->template->blocks[$block_id];
+			$block = &$node->ste->blocks[$block_id];
 			if (!isset($block)) $block = $node;
 			$block->setref($node);
 		}
 
-		static public function tag_blockdef(template_node $node) {
+		static public function tag_blockdef(ste_node $node) {
 			static::tag_block(clone $node);
 			$node->emptytag();
 		}
 		
-		static public function tag_t(template_node $node) {
+		static public function tag_t(ste_node $node) {
 			$lit = $node->literal();
 			if ($lit === false) {
 				$node->a = '<?php ob_start(); ?>';
@@ -295,17 +295,17 @@
 			}
 		}
 
-		static public function tag_for(template_node $node) {
+		static public function tag_for(ste_node $node) {
 			$node->a = '<?php for ($n = 0; $n < 10; $n++) { ?>';
 			$node->c = '<?php } ?>';
 		}
 		
-		static public function tag_extends(template_node $node) {
-			$node->template_node_parser->tree = $node->template->parse_file($node->params['name']);
+		static public function tag_extends(ste_node $node) {
+			$node->ste_node_parser->tree = $node->ste->parse_file($node->params['name']);
 		}
 		
-		static public function tag_putblock(template_node $node) {
-			$node->b = array($node->template->blocks[$node->params['id']]);
+		static public function tag_putblock(ste_node $node) {
+			$node->b = array($node->ste->blocks[$node->params['id']]);
 		}
 	}
 ?>
