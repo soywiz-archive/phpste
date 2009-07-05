@@ -22,6 +22,11 @@ class ste\ste {
 
 {{{
 $ste = new ste\ste('templates', 'template_cache');
+$ste->show('page', array(
+	'var1' => 'value1',
+	'var2' => 2,
+	'var3' => array(1, 2, 3, 4),
+));
 }}}
 
 
@@ -34,7 +39,7 @@ This cache system has the following interface:
 interface ste\cache {
 	public function is_cached($name);
 	public function store($name, $data);
-	public function execute($name);
+	public function execute($name, &$params);
 }
 }}}
 
@@ -50,7 +55,7 @@ $cache->execute($name);
 There are two embedded implementations of the cache interface:
 {{{
 class ste\cache_null { function __construct() {} }
-class ste\cache_file { function __construct() {$path} }
+class ste\cache_file { function __construct($path) {} }
 }}}
 
 They are used automatically in ste\ste class if a string or null passed to the $cache parameter.
