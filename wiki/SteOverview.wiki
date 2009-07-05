@@ -1,0 +1,104 @@
+#summary phpSTE engine
+#labels phpste,overview,Featured
+
+= Main class interface (ste) =
+
+{{{
+// ste user interface
+class ste\ste {
+	public function __construct($path, $cache = null);
+
+	public function plugin($class_name);
+
+	public function get($name);
+	public function show($name);
+
+	public function parse($data);
+	public function parse_file($name);
+
+	// ...
+}
+}}}
+
+{{{
+$ste = new ste\ste('templates', 'template_cache');
+}}}
+
+
+= Cache interface =
+
+To avoid parsing the templates each time, STE supports a cache system for templates.
+This cache system has the following interface:
+
+{{{
+interface ste\cache {
+	public function is_cached($name);
+	public function store($name, $data);
+	public function execute($name);
+}
+}}}
+
+And the code using the interface is:
+
+{{{
+if (!$cache->is_cached($name)) {
+	$cache->store($name, process_data());
+}
+$cache->execute($name);
+}}}
+
+There are two embedded implementations of the cache interface:
+{{{
+class ste\cache_null { function __construct() {} }
+class ste\cache_file { function __construct() {$path} }
+}}}
+
+They are used automatically in ste\ste class if a string or null passed to the $cache parameter.
+
+= Plugin interface =
+
+The plugin interface allows extending STE.
+Currently only supports adding new tags.
+Using reflection the plugin function detects methods starting by TAG_ and includes them to the list. If it defines a tag already defined, the last plugin call, will overwrite all the previous.
+
+{{{
+class my_ste_plugin {
+	static public function TAG_test(ste\node $node) {
+		// ...
+	}
+}
+
+$ste->plugin('my_ste_plugin');
+}}}
+
+{{{
+// ste plugin interface
+class ste\ste {
+	public $path;
+	public $cache;
+	public $plugins = array();
+	public $tags    = array();
+	public $blocks  = array();
+}
+
+class ste\node {
+	public $is_root = false;
+	public $node_parser, $ste;
+	public $data, $name = 'unknown', $line = -1, $params = array();
+	public $a = '', $b = array(), $c = '';
+
+	public function setref($that);
+	public function add($v);
+	public function __construct(node_parser $node_parser);
+	public function __tostring();
+	public function literal();
+	public function emptytag();
+	public function createnode();
+}
+
+class ste\node_parser {
+	public $node_root;
+	public $ste;
+}
+
+}}}
