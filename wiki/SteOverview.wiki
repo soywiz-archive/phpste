@@ -13,8 +13,8 @@ class ste\ste {
 	public function get($name);
 	public function show($name);
 
-	public function parse($data);
-	public function parse_file($name);
+	public function parse($data, $params);
+	public function parse_file($name, $params);
 
 	// ...
 }
