@@ -69,12 +69,17 @@ Using reflection the plugin function detects methods starting by TAG_ and includ
 {{{
 class my_ste_plugin {
 	static public function TAG_test(ste\node $node) {
+		$this->checkParams(false, array(
+			// ...
+		));
 		// ...
 	}
 }
 
 $ste->plugin('my_ste_plugin');
 }}}
+
+For more information creating plugins, see the class ste\plugin_base.
 
 {{{
 // ste plugin interface
@@ -99,6 +104,7 @@ class ste\node {
 	public function literal();
 	public function emptytag();
 	public function createnode();
+	public function checkParams($allow_more = true, $params_check = array());
 }
 
 class ste\node_parser {
