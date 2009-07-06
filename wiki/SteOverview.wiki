@@ -1,7 +1,11 @@
 #summary phpSTE engine
 #labels phpste,overview,Featured
 
-= Main class interface (ste) =
+<wiki:toc />
+
+= STE subsystems =
+
+== Main class interface (ste) ==
 
 {{{
 // ste user interface
@@ -30,7 +34,7 @@ $ste->show('page', array(
 }}}
 
 
-= Cache interface =
+== Cache interface ==
 
 To avoid parsing the templates each time, STE supports a cache system for templates.
 This cache system has the following interface:
@@ -60,7 +64,7 @@ class ste\cache_file { function __construct($path) {} }
 
 They are used automatically in ste\ste class if a string or null passed to the $cache parameter.
 
-= Plugin interface =
+== Plugin interface ==
 
 The plugin interface allows extending STE.
 Currently only supports adding new tags.
@@ -112,4 +116,113 @@ class ste\node_parser {
 	public $ste;
 }
 
+}}}
+
+= Template examples =
+
+*base.php*
+
+_This is the skeleton of the page. All the pages will inherit this one. It defines the *title* block, and the *contents* block. Those blocks would be overrided._
+{{{
+<html>
+	<head>
+		<title>{t}{block id="title"}Default title{/block}{/t}</title>
+	</head>
+	<body>
+		<div id="header">
+			<ul id="navbar">
+				<li>Section1</li>
+				<li>Section2</li>
+				<li>Section3</li>
+			</ul>
+		</div>
+		<div id="contents">{block id="contents"}
+			Empty page
+		{/block}</div>
+		<div id="footer">
+			&copy; 2009
+		</div>
+	</body>
+</html>
+}}}
+
+*2cols.php*
+
+_This is a basic template overriding *base* and defining two new blocks: *column_left* and *column_right* for sections with two columns._
+{{{
+{extends name="base"}
+
+{block id="title"}Two columns title{/block}
+{block id="contents"}
+	<div id="column_left">{block id="column_left"}
+		Left column
+	{/block}</div>
+	<div id="column_right">{block id="column_right"}
+		Right column
+	{/block}</div>
+{/block}
+}}}
+
+*3cols.php*
+
+_TODO_
+{{{
+{extends name="base"}
+
+{block id="title"}Three columns title{/block}
+{block id="contents"}
+	<div id="column_left">{block id="column_left"}
+		Left column
+	{/block}</div>
+	<div id="column_middle">{block id="column_middle"}
+		Middle column
+	{/block}</div>
+	<div id="column_right">{block id="column_right"}
+		Right column
+	{/block}</div>
+{/block}
+}}}
+
+*section1.php*
+
+_TODO_
+{{{
+{extends name="2cols"}
+
+{block id="title"}Overrided title for section1{/block}
+
+{block id="column_left"}
+	This is the left column
+	for section1.
+	<ol>
+		<li>test1</li>
+		<li>test2</li>
+		<li>test3</li>
+	</ol>
+{/block}
+
+}}}
+
+*section2.php*
+
+_TODO_
+{{{
+{extends name="3cols"}
+
+{block id="column_left"}
+	This is the left column
+	for section1.
+	<ol>
+		<li>test1</li>
+		<li>test2</li>
+		<li>test3</li>
+	</ol>
+{/block}
+
+{block id="column_right"}
+	<ol>
+		<li>right1</li>
+		<li>right2</li>
+	</ol>
+{/block}
 }}}
