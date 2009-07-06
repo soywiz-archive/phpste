@@ -150,7 +150,7 @@ _This is the skeleton of the page. All the pages will inherit this one. It defin
 
 _This is a basic template overriding *base* and defining two new blocks: *column_left* and *column_right* for sections with two columns._
 {{{
-{extends name="base"}
+{!extends name="base"}
 
 {block id="title"}Two columns title{/block}
 {block id="contents"}
@@ -167,7 +167,7 @@ _This is a basic template overriding *base* and defining two new blocks: *column
 
 _TODO_
 {{{
-{extends name="base"}
+{!extends name="base"}
 
 {block id="title"}Three columns title{/block}
 {block id="contents"}
@@ -187,7 +187,7 @@ _TODO_
 
 _TODO_
 {{{
-{extends name="2cols"}
+{!extends name="2cols"}
 
 {block id="title"}Overrided title for section1{/block}
 
@@ -207,7 +207,7 @@ _TODO_
 
 _TODO_
 {{{
-{extends name="3cols"}
+{!extends name="3cols"}
 
 {block id="column_left"}
 	This is the left column
