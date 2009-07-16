@@ -15,7 +15,7 @@ class cache_null implements cache
 	public function is_cached($name) { return false; }
 	public function store($name, $data, $files) { $this->memcache[$name] = $data; }
 	public function execute($name, &$params) {
-		if (!isset($this->memcache[$name])) throw(new Exception("Can't load template cache '{$name}'"));
+		if (!isset($this->memcache[$name])) throw(new \Exception("Can't load template cache '{$name}'"));
 		extract($params);
 		eval('?>' . $this->memcache[$name]);
 	}
@@ -84,7 +84,7 @@ class ste
 		$this->cache = $cache;
 		
 		if (!($cache instanceof cache)) {
-			throw(new Exception("Cache must implement the interface 'ste\\cache'."));
+			throw(new \Exception("Cache must implement the interface 'ste\\cache'."));
 		}
 
 		// Load the base plugins.
@@ -99,7 +99,7 @@ class ste
 	public function get_path($name) {
 		$rname = realpath("{$this->path}/{$name}.php");
 		if (substr_compare($this->path, $rname, 0, strlen($this->path), false) != 0) {
-			throw(new Exception("Template '{$rname}' out of the safe path '{$this->path}'."));
+			throw(new \Exception("Template '{$rname}' out of the safe path '{$this->path}'."));
 		}
 		return $rname;
 	}
@@ -138,7 +138,7 @@ class ste
 	public function process_block(node $node, $line = -1) {
 		$node_name = $node->name;
 
-		if (!isset($this->tags[$node_name])) throw(new Exception("Unknown tag '{$node_name}' at line {$line}"));
+		if (!isset($this->tags[$node_name])) throw(new \Exception("Unknown tag '{$node_name}' at line {$line}"));
 
 		$class  = $this->tags[$node_name];
 		$method = "TAG_{$node_name}";
@@ -307,7 +307,9 @@ class node
 	public function literal() {
 		if (isset($this->ref)) return $this->ref->literal();
 		foreach ($this->b as &$v) if ($v instanceof node) return false;
-		return implode('', $this->b);
+		$ret = implode('', $this->b);
+		if (strpos($ret, '<?') !== false) return false;
+		return $ret;
 	}
 	
 	public function emptytag() {
@@ -424,6 +426,21 @@ class plugin_base
 		));
 
 		$node->b = array($node->ste->blocks[$node->params['id']]);
+	}
+
+	static public function TAG_addblock(node $node) {
+		$node->checkParams(false, array(
+			'id' => array('id', null),
+		));
+
+		$block_id = $node->params['id'];
+		$block = &$node->ste->blocks[$block_id];
+		if (!isset($block)) {
+			$block = $node;
+		} else {
+			$block->add("\n");
+			$block->add($node);
+		}
 	}
 }
 ?>
