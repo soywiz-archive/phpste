@@ -46,12 +46,12 @@ class cache_file extends cache_null implements cache
 
 	public function store($name, $data, $files) {
 		$file = $this->__locate($name);
-		@file_put_contents($file, $data);
-		$rfiles = array();
-		foreach ($files as $cfile) {
-			$rfiles[$cfile] = filemtime($cfile);
+		{
+			$rfiles = array(); $files[] = __FILE__;
+			foreach ($files as $cfile) $rfiles[$cfile] = filemtime($cfile);
 		}
 		@file_put_contents("{$file}.info", serialize($rfiles));
+		@file_put_contents($file, $data);
 		parent::store($name, $data, $files);
 	}
 
@@ -306,7 +306,7 @@ class node
 
 	public function literal() {
 		if (isset($this->ref)) return $this->ref->literal();
-		foreach ($this->b as &$v) if ($v instanceof node) return false;
+		foreach ($this->b as &$v) if ($v instanceof node && ($v->literal() === false)) return false;
 		$ret = implode('', $this->b);
 		if (strpos($ret, '<?') !== false) return false;
 		return $ret;
