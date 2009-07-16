@@ -496,6 +496,14 @@ class plugin_base
 		));
 		$node->node_parser->node_root = $node->ste->parse_file($node->params['name']);
 	}
+
+	static public function TAG_PRE_include(node $node) {
+		$node->mustclose = false;
+		$node->checkParams(false, array(
+			'name' => array('string', null, 'Required name of the template to extend'),
+		));
+		$node->setref($node->ste->parse_file($node->params['name']));
+	}
 	
 	static public function TAG_PRE_putblock(node $node) {
 		$node->mustclose = false;
