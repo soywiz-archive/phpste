@@ -4,7 +4,7 @@ namespace ste;
 interface cache
 {
 	public function is_cached($name);
-	public function store($name, $data);
+	public function store($name, $data, $files);
 	public function execute($name, &$params);
 }
 
@@ -13,7 +13,7 @@ class cache_null implements cache
 	public $memcache = array();
 
 	public function is_cached($name) { return false; }
-	public function store($name, $data) { $this->memcache[$name] = $data; }
+	public function store($name, $data, $files) { $this->memcache[$name] = $data; }
 	public function execute($name, &$params) {
 		if (!isset($this->memcache[$name])) throw(new Exception("Can't load template cache '{$name}'"));
 		extract($params);
@@ -37,13 +37,22 @@ class cache_file extends cache_null implements cache
 
 	public function is_cached($name) {
 		$file = $this->__locate($name);
+		if (!file_exists($file_info = "{$file}.info")) return false;
+		foreach (@unserialize(file_get_contents($file_info)) as $file => $time) {
+			if (@filemtime($file) != $time) return false;
+		}
 		return file_exists($file);
 	}
 
-	public function store($name, $data) {
+	public function store($name, $data, $files) {
 		$file = $this->__locate($name);
 		@file_put_contents($file, $data);
-		parent::store($name, $data);
+		$rfiles = array();
+		foreach ($files as $cfile) {
+			$rfiles[$cfile] = filemtime($cfile);
+		}
+		@file_put_contents("{$file}.info", serialize($rfiles));
+		parent::store($name, $data, $files);
 	}
 
 	public function execute($name, &$params) {
@@ -64,8 +73,9 @@ class ste
 	public $plugins = array();
 	public $tags    = array();
 	public $blocks  = array();
-	
+
 	protected $plugins_cached = array();
+	protected $parsed_files = array();
 
 	public function __construct($path, $cache = null) {
 		if ($cache === null) $cache = new cache_null();
@@ -86,12 +96,16 @@ class ste
 		$this->plugins[] = $class;
 	}
 	
-	public function get_contents($name) {
+	public function get_path($name) {
 		$rname = realpath("{$this->path}/{$name}.php");
 		if (substr_compare($this->path, $rname, 0, strlen($this->path), false) != 0) {
 			throw(new Exception("Template '{$rname}' out of the safe path '{$this->path}'."));
 		}
-		return file_get_contents($rname);
+		return $rname;
+	}
+	
+	public function get_contents($name) {
+		return file_get_contents($this->get_path($name));
 	}
 	
 	public function parse_init() {
@@ -116,7 +130,9 @@ class ste
 	}
 	
 	public function parse_file($name) {
-		return $this->parse($this->get_contents($name));
+		$c = &$this->parsed_files[$this->get_path($name)];
+		if (!isset($c)) $c = $this->parse($this->get_contents($name));
+		return $c;
 	}
 	
 	public function process_block(node $node, $line = -1) {
@@ -131,7 +147,9 @@ class ste
 	}
 	
 	public function show($name, $params = array()) {
-		if (!$this->cache->is_cached($name)) $this->cache->store($name, (string)$this->parse_file($name));
+		if (!$this->cache->is_cached($name)) {
+			$this->cache->store($name, (string)$this->parse_file($name), array_keys($this->parsed_files));
+		}
 		$this->cache->execute($name, $params);
 	}
 	
@@ -177,7 +195,11 @@ class node_parser
 	
 	public function parse_params(node $node, $string) {
 		$node->data = $string;
-		@list($node->name, $params) = explode(' ', $node->data, 2);
+
+		$current = explode(' ', $node->data, 2);
+		if (isset($current[0])) $node->name = $current[0];
+		$params = isset($current[1]) ? $current[1] : null;
+
 		preg_match_all('/(\\w+)=(\'[^\']+\'|"[^"]+"|\\S+)/', $params, $matches, PREG_SET_ORDER);
 		$node->params = array();
 		foreach ($matches as $match) {
@@ -304,6 +326,7 @@ class node
 		}
 		
 		foreach ($params_check as $name => $info) {
+			while (count($info) < 3) $info[] = null;
 			@list($type, $default_value, $error) = $info;
 			$value = &$this->params[$name];
 			if (isset($value)) {
