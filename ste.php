@@ -126,7 +126,7 @@ class ste
 		}
 	}
 	
-	public function parse($data) {
+	public function parse($data, $name = 'unknown') {
 		$final = array();
 		foreach (explode('{literal}', $data) as $k => $chunk) {
 			if ($k % 2 == 0) {
@@ -136,12 +136,12 @@ class ste
 			}
 		}
 		$this->parse_init();
-		return node_parser::get($this, $final);
+		return node_parser::get($this, $final, $name);
 	}
 	
 	public function parse_file($name) {
 		$c = &$this->parsed_files[$this->get_path($name)];
-		if (!isset($c)) $c = $this->parse($this->get_contents($name));
+		if (!isset($c)) $c = $this->parse($this->get_contents($name), $name);
 		return $c;
 	}
 
@@ -178,7 +178,8 @@ class ste
 class NodeException extends \Exception
 {
 	public function __construct(node $node, $str) {
-		parent::__construct("tag({$node->name}:{$node->line}): {$str}");
+		if (!strlen($str)) $str = 'unknown error';
+		parent::__construct("tag({$node->name}) file({$node->file}:{$node->line}): {$str}");
 	}
 }
 
@@ -188,6 +189,7 @@ class node_parser
 	public $node_root;
 	public $ste;
 	public $line;
+	public $name;
 	
 	public function __construct(ste $ste, &$tokens, $name = 'unknown') {
 		$this->ste = $ste;
@@ -203,6 +205,7 @@ class node_parser
 	public function createnode($current_line = -1) {
 		$node = new node($this);
 		$node->line = $current_line;
+		$node->file = $this->name;
 		return $node;
 	}
 	
@@ -280,8 +283,8 @@ class node_parser
 	}
 
 	// Static method to obtain a parsed node_root.
-	static public function get(ste $ste, $tokens) {
-		$tp = new static($ste, $tokens);
+	static public function get(ste $ste, $tokens, $name = 'unknown') {
+		$tp = new static($ste, $tokens, $name);
 		$tp->process();
 		return $tp->node_root;
 	}
@@ -292,7 +295,7 @@ class node
 	public $is_root = false;
 	public $parent_node = null;
 	public $node_parser, $ste;
-	public $data, $name = 'unknown', $line = -1, $params = array();
+	public $data, $name = 'unknown', $file = 'unknown', $line = -1, $params = array();
 	public $a = '', $b = array(), $c = '';
 	public $generate_callback = null;
 	public $mustclose = false;
@@ -379,7 +382,7 @@ class node
 			}
 			// Not defined and without default value.
 			else {
-				throw(new NodeException($this, (($error === null) ? $error : "Expected parameter '{$name}'")));
+				throw(new NodeException($this, (($error !== null) ? $error : "Expected parameter '{$name}'")));
 			}
 		}
 	}
@@ -448,6 +451,7 @@ class plugin_base
 		$p = &$node->params;
 		$node->a = "<?php if ({$p['cond']}) { ?>";
 		$node->c = '<?php } ?>';
+		$node->haselse = false;
 	}
 
 	static public function TAG_PRE_else(node $node) {
@@ -458,6 +462,7 @@ class plugin_base
 
 		$p = &$node->params;
 		$node->a = "<?php } else { ?>";
+		$node->parent_node->haselse = true;
 	}
 
 	static public function TAG_PRE_elseif(node $node) {
@@ -466,6 +471,7 @@ class plugin_base
 			'cond'  => array('expr', null),
 		));
 		if ($node->parent_node->name != 'if') throw(new NodeException($node, "else must be in a if block"));
+		if ($node->parent_node->haselse) throw(new NodeException($node, "elseif can't be after the else"));
 
 		$p = &$node->params;
 		$node->a = "<?php } else if ({$p['cond']}) { ?>";
