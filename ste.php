@@ -116,7 +116,12 @@ class ste
 			$rclass = new \ReflectionClass($plugin_class);
 			foreach ($rclass->getMethods() as $method) {
 				$name = $method->name;
-				if (substr($name, 0, 4) == 'TAG_') $this->tags[substr($name, 4)] = $plugin_class;
+				if (preg_match('/^TAG_(PRE|POST|FINAL)_(\\w+)$/', $name, $matches)) {
+					list(, $type, $tname) = $matches;
+					$ct = &$this->tags[$tname];
+					if (!isset($ct)) $ct = array();
+					$ct[$type] = array($plugin_class, $name);
+				}
 			}
 		}
 	}
@@ -139,16 +144,18 @@ class ste
 		if (!isset($c)) $c = $this->parse($this->get_contents($name));
 		return $c;
 	}
-	
-	public function process_block(node $node, $line = -1) {
+
+	public function process_block(node $node, $step, $line = -1) {
 		$node_name = $node->name;
 
+		if ($line == -1) $line = $node->line;
 		if (!isset($this->tags[$node_name])) throw(new \Exception("Unknown tag '{$node_name}' at line {$line}"));
+		
+		$call = &$this->tags[$node_name][$step];
+		if (!isset($call)) return null;
 
-		$class  = $this->tags[$node_name];
-		$method = "TAG_{$node_name}";
-
-		return $class::$method($node);
+		return call_user_func($call, $node);
+		//return $call($node);
 	}
 	
 	public function show($name, $params = array()) {
@@ -235,16 +242,9 @@ class node_parser
 						if ($data != $parent_node->name) {
 							throw(new NodeException($parent_node, "Mismatch opening/closing tag. Closing({$data}:{$current_line})"));
 						}
-						$this->ste->process_block($parent_node, $current_line);
+						$this->ste->process_block($parent_node, 'POST', $current_line);
 
 						return $parent_node;
-					break;
-					// Opening+closing node.
-					case '!':
-						$node = $this->createnode($current_line);
-						$this->parse_params($node, substr($c, 2, -1));
-						$this->ste->process_block($node, $current_line);
-						$parent_node->add($node);
 					break;
 					// Variables.
 					case '$':
@@ -255,8 +255,13 @@ class node_parser
 					// Opening node.
 					default:
 						$node = $this->createnode($current_line);
+						
+						$node->parent_node = $parent_node;
 						$this->parse_params($node, substr($c, 1, -1));
-						$this->process($node);
+						$this->ste->process_block($node, 'PRE');
+						if ($node->mustclose) {
+							$this->process($node);
+						}
 						$parent_node->add($node);
 					break;
 				}
@@ -285,29 +290,25 @@ class node_parser
 class node
 {
 	public $is_root = false;
+	public $parent_node = null;
 	public $node_parser, $ste;
 	public $data, $name = 'unknown', $line = -1, $params = array();
 	public $a = '', $b = array(), $c = '';
 	public $generate_callback = null;
+	public $mustclose = false;
 
 	protected $ref;
 	
 	static public function sgenerate(&$that) {
-		if ($that instanceof node) {
-			if (isset($that->ref)) return static::sgenerate($that->ref);
+		if (!($that instanceof node)) return $that;
+		if (isset($that->ref)) return static::sgenerate($that->ref);
 
-			//var_dump($v->generate_callback);
-			if ($that->generate_callback !== null) {
-				$s = $that->generate_callback;
-				$s();
-			}
-			$s = '';
-			$s .= static::sgenerate($that->a);
-			foreach ($that->b as $e) $s .= static::sgenerate($e);
-			$s .= static::sgenerate($that->c);
-			return $s;
-		}
-		return $that;
+		if (!$that->is_root) $that->ste->process_block($that, 'FINAL');
+		$s = '';
+		$s .= static::sgenerate($that->a);
+		foreach ($that->b as $e) $s .= static::sgenerate($e);
+		$s .= static::sgenerate($that->c);
+		return $s;
 	}
 	
 	public function setref($that) {
@@ -361,6 +362,9 @@ class node
 					case 'var':
 						if (!preg_match('/^\\$[a-z_][a-z0-9_]*$/i', $value)) throw(new NodeException($this, "Parameter '{$name}' should be a variable"));
 					break;
+					case 'expr':
+						// TODO.
+					break;
 					case 'int':
 						if ($value != (int)$value) throw(new NodeException($this, "Parameter '{$name}' should be an integer number"));
 					break;
@@ -383,7 +387,8 @@ class node
 
 class plugin_base
 {
-	static public function TAG_block(node $node) {
+	static public function TAG_PRE_block(node $node) {
+		$node->mustclose = true;
 		$node->checkParams(false, array(
 			'id' => array('id', null),
 		));
@@ -395,32 +400,33 @@ class plugin_base
 		} else {
 			$block->setref($node);
 		}
-		
 	}
 
-	static public function TAG_blockdef(node $node) {
+	static public function TAG_PRE_blockdef(node $node) {
+		$node->mustclose = true;
 		static::TAG_block(clone $node);
 		$node->emptytag();
 	}
 	
-	static public function TAG_t(node $node) {
+	static public function TAG_PRE_t(node $node) {
+		$node->mustclose = true;
 		$node->checkParams(false, array(
 		));
-
-		// It's a literal, we can use it directly.
-		$node->generate_callback = function() use ($node) {
-			if (($lit = $node->literal()) !== false) {
-				$node->b = array('<?php echo _(', var_export($lit, true), '); ?>');
-			}
-			// Not a literal, we should use buffering.
-			else {
-				$node->a = '<?php ob_start(); ?>';
-				$node->c = '<?php echo _(ob_get_clean()); ?>';
-			}
-		};
 	}
 
-	static public function TAG_for(node $node) {
+	static public function TAG_FINAL_t(node $node) {
+		if (($lit = $node->literal()) !== false) {
+			$node->b = array('<?php echo _(', var_export($lit, true), '); ?>');
+		}
+		// Not a literal, we should use buffering.
+		else {
+			$node->a = '<?php ob_start(); ?>';
+			$node->c = '<?php echo _(ob_get_clean()); ?>';
+		}
+	}
+
+	static public function TAG_PRE_for(node $node) {
+		$node->mustclose = true;
 		$node->checkParams(false, array(
 			'var'  => array('var', null),
 			'to'   => array('int', null),
@@ -433,7 +439,40 @@ class plugin_base
 		$node->c = '<?php } ?>';
 	}
 
-	static public function TAG_foreach(node $node) {
+	static public function TAG_PRE_if(node $node) {
+		$node->mustclose = true;
+		$node->checkParams(false, array(
+			'cond'  => array('expr', null),
+		));
+
+		$p = &$node->params;
+		$node->a = "<?php if ({$p['cond']}) { ?>";
+		$node->c = '<?php } ?>';
+	}
+
+	static public function TAG_PRE_else(node $node) {
+		$node->mustclose = false;
+		$node->checkParams(false, array(
+		));
+		if ($node->parent_node->name != 'if') throw(new NodeException($node, "else must be in a if block"));
+
+		$p = &$node->params;
+		$node->a = "<?php } else { ?>";
+	}
+
+	static public function TAG_PRE_elseif(node $node) {
+		$node->mustclose = false;
+		$node->checkParams(false, array(
+			'cond'  => array('expr', null),
+		));
+		if ($node->parent_node->name != 'if') throw(new NodeException($node, "else must be in a if block"));
+
+		$p = &$node->params;
+		$node->a = "<?php } else if ({$p['cond']}) { ?>";
+	}
+
+	static public function TAG_PRE_foreach(node $node) {
+		$node->mustclose = true;
 		$node->checkParams(false, array(
 			'list' => array('var', null),
 			'var'  => array('var', null),
@@ -444,14 +483,16 @@ class plugin_base
 		$node->c = '<?php } ?>';
 	}
 	
-	static public function TAG_extends(node $node) {
+	static public function TAG_PRE_extends(node $node) {
+		$node->mustclose = false;
 		$node->checkParams(false, array(
 			'name' => array('string', null, 'Required name of the template to extend'),
 		));
 		$node->node_parser->node_root = $node->ste->parse_file($node->params['name']);
 	}
 	
-	static public function TAG_putblock(node $node) {
+	static public function TAG_PRE_putblock(node $node) {
+		$node->mustclose = false;
 		$node->checkParams(false, array(
 			'id' => array('string', null),
 		));
@@ -459,7 +500,8 @@ class plugin_base
 		$node->b = array($node->ste->blocks[$node->params['id']]);
 	}
 
-	static public function TAG_addblock(node $node) {
+	static public function TAG_PRE_addblock(node $node) {
+		$node->mustclose = true;
 		$node->checkParams(false, array(
 			'id' => array('id', null),
 		));
