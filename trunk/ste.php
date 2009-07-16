@@ -122,11 +122,16 @@ class ste
 	}
 	
 	public function parse($data) {
+		$final = array();
+		foreach (explode('{literal}', $data) as $k => $chunk) {
+			if ($k % 2 == 0) {
+				$final = array_merge($final, preg_split('@(\{[^}]*\})@Umsi', $chunk, -1, PREG_SPLIT_DELIM_CAPTURE));
+			} else {
+				$final[] = $chunk;
+			}
+		}
 		$this->parse_init();
-		return node_parser::get(
-			$this,
-			preg_split('@(\{[^}]*\})@Umsi', $data, -1, PREG_SPLIT_DELIM_CAPTURE)
-		);
+		return node_parser::get($this, $final);
 	}
 	
 	public function parse_file($name) {
@@ -148,7 +153,8 @@ class ste
 	
 	public function show($name, $params = array()) {
 		if (!$this->cache->is_cached($name)) {
-			$this->cache->store($name, node::sgenerate($this->parse_file($name)), array_keys($this->parsed_files));
+			$result = $this->parse_file($name);
+			$this->cache->store($name, node::sgenerate($result), array_keys($this->parsed_files));
 		}
 		$this->cache->execute($name, $params);
 	}
