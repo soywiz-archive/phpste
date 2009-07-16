@@ -148,7 +148,7 @@ class ste
 	
 	public function show($name, $params = array()) {
 		if (!$this->cache->is_cached($name)) {
-			$this->cache->store($name, (string)$this->parse_file($name), array_keys($this->parsed_files));
+			$this->cache->store($name, node::sgenerate($this->parse_file($name)), array_keys($this->parsed_files));
 		}
 		$this->cache->execute($name, $params);
 	}
@@ -282,8 +282,27 @@ class node
 	public $node_parser, $ste;
 	public $data, $name = 'unknown', $line = -1, $params = array();
 	public $a = '', $b = array(), $c = '';
+	public $generate_callback = null;
 
 	protected $ref;
+	
+	static public function sgenerate(&$that) {
+		if ($that instanceof node) {
+			if (isset($that->ref)) return static::sgenerate($that->ref);
+
+			//var_dump($v->generate_callback);
+			if ($that->generate_callback !== null) {
+				$s = $that->generate_callback;
+				$s();
+			}
+			$s = '';
+			$s .= static::sgenerate($that->a);
+			foreach ($that->b as $e) $s .= static::sgenerate($e);
+			$s .= static::sgenerate($that->c);
+			return $s;
+		}
+		return $that;
+	}
 	
 	public function setref($that) {
 		if ($this !== $that) $this->ref = $that;
@@ -363,10 +382,14 @@ class plugin_base
 			'id' => array('id', null),
 		));
 
-		$block_id = $node->params['id'];
-		$block = &$node->ste->blocks[$block_id];
-		if (!isset($block)) $block = $node;
-		$block->setref($node);
+		$block = &$node->ste->blocks[$block_id = $node->params['id']];
+
+		if (!isset($block)) {
+			$block = $node;
+		} else {
+			$block->setref($node);
+		}
+		
 	}
 
 	static public function TAG_blockdef(node $node) {
@@ -379,14 +402,16 @@ class plugin_base
 		));
 
 		// It's a literal, we can use it directly.
-		if (($lit = $node->literal()) !== false) {
-			$node->b = array('<?php echo _(' . var_export($lit, true) . '); ?>');
-		}
-		// Not a literal, we should use buffering.
-		else {
-			$node->a = '<?php ob_start(); ?>';
-			$node->c = '<?php echo _(ob_get_clean()); ?>';
-		}
+		$node->generate_callback = function() use ($node) {
+			if (($lit = $node->literal()) !== false) {
+				$node->b = array('<?php echo _(', var_export($lit, true), '); ?>');
+			}
+			// Not a literal, we should use buffering.
+			else {
+				$node->a = '<?php ob_start(); ?>';
+				$node->c = '<?php echo _(ob_get_clean()); ?>';
+			}
+		};
 	}
 
 	static public function TAG_for(node $node) {
