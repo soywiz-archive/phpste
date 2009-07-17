@@ -116,7 +116,7 @@ class ste
 			$rclass = new \ReflectionClass($plugin_class);
 			foreach ($rclass->getMethods() as $method) {
 				$name = $method->name;
-				if (preg_match('/^TAG_(PRE|POST|FINAL)_(\\w+)$/', $name, $matches)) {
+				if (preg_match('/^TAG_(OPENCLOSE|OPEN|CLOSE|RENDER)_(\\w+)$/', $name, $matches)) {
 					list(, $type, $tname) = $matches;
 					$ct = &$this->tags[$tname];
 					if (!isset($ct)) $ct = array();
@@ -152,10 +152,17 @@ class ste
 		if (!isset($this->tags[$node_name])) throw(new \Exception("Unknown tag '{$node_name}' at line {$line}"));
 		
 		$call = &$this->tags[$node_name][$step];
+		
+		if ($step == 'OPEN') {
+			if (isset($this->tags[$node_name]['OPENCLOSE'])) {
+				$call = &$this->tags[$node_name]['OPENCLOSE'];
+				$node->mustclose = false;
+			}
+		}
+		
 		if (!isset($call)) return null;
 
 		return call_user_func($call, $node);
-		//return $call($node);
 	}
 	
 	protected function cleanup($text) {
@@ -249,7 +256,7 @@ class node_parser
 						if ($data != $parent_node->name) {
 							throw(new NodeException($parent_node, "Mismatch opening/closing tag. Closing({$data}:{$current_line})"));
 						}
-						$this->ste->process_block($parent_node, 'POST', $current_line);
+						$this->ste->process_block($parent_node, 'CLOSE', $current_line);
 
 						return $parent_node;
 					break;
@@ -265,10 +272,8 @@ class node_parser
 						
 						$node->parent_node = $parent_node;
 						$this->parse_params($node, substr($c, 1, -1));
-						$this->ste->process_block($node, 'PRE');
-						if ($node->mustclose) {
-							$this->process($node);
-						}
+						$this->ste->process_block($node, 'OPEN');
+						if ($node->mustclose) $this->process($node);
 						$parent_node->add($node);
 					break;
 				}
@@ -302,7 +307,7 @@ class node
 	public $data, $name = 'unknown', $file = 'unknown', $line = -1, $params = array();
 	public $a = '', $b = array(), $c = '';
 	public $generate_callback = null;
-	public $mustclose = false;
+	public $mustclose = true;
 
 	protected $ref;
 	
@@ -310,7 +315,7 @@ class node
 		if (!($that instanceof node)) return $that;
 		if (isset($that->ref)) return static::sgenerate($that->ref);
 
-		if (!$that->is_root) $that->ste->process_block($that, 'FINAL');
+		if (!$that->is_root) $that->ste->process_block($that, 'RENDER');
 		$s = '';
 		$s .= static::sgenerate($that->a);
 		foreach ($that->b as $e) $s .= static::sgenerate($e);
@@ -394,8 +399,7 @@ class node
 
 class plugin_base
 {
-	static public function TAG_PRE_block(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_block(node $node) {
 		$node->checkParams(false, array(
 			'id' => array('id', null),
 		));
@@ -409,19 +413,15 @@ class plugin_base
 		}
 	}
 
-	static public function TAG_PRE_blockdef(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_blockdef(node $node) {
 		static::TAG_block(clone $node);
 		$node->emptytag();
 	}
 	
-	static public function TAG_PRE_t(node $node) {
-		$node->mustclose = true;
+	static public function TAG_RENDER_t(node $node) {
 		$node->checkParams(false, array(
 		));
-	}
 
-	static public function TAG_FINAL_t(node $node) {
 		if (($lit = $node->literal()) !== false) {
 			$node->b = array('<?php echo _(', var_export($lit, true), '); ?>');
 		}
@@ -432,8 +432,7 @@ class plugin_base
 		}
 	}
 
-	static public function TAG_PRE_for(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_for(node $node) {
 		$node->checkParams(false, array(
 			'var'  => array('var', null),
 			'to'   => array('int', null),
@@ -446,8 +445,7 @@ class plugin_base
 		$node->c = '<?php } ?>';
 	}
 
-	static public function TAG_PRE_if(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_if(node $node) {
 		$node->checkParams(false, array(
 			'cond'  => array('expr', null),
 		));
@@ -458,8 +456,7 @@ class plugin_base
 		$node->haselse = false;
 	}
 
-	static public function TAG_PRE_else(node $node) {
-		$node->mustclose = false;
+	static public function TAG_OPENCLOSE_else(node $node) {
 		$node->checkParams(false, array(
 		));
 		if ($node->parent_node->name != 'if') throw(new NodeException($node, "else must be in a if block"));
@@ -469,8 +466,7 @@ class plugin_base
 		$node->parent_node->haselse = true;
 	}
 
-	static public function TAG_PRE_elseif(node $node) {
-		$node->mustclose = false;
+	static public function TAG_OPENCLOSE_elseif(node $node) {
 		$node->checkParams(false, array(
 			'cond'  => array('expr', null),
 		));
@@ -481,8 +477,7 @@ class plugin_base
 		$node->a = "<?php } else if ({$p['cond']}) { ?>";
 	}
 
-	static public function TAG_PRE_foreach(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_foreach(node $node) {
 		$node->checkParams(false, array(
 			'list' => array('var', null),
 			'var'  => array('var', null),
@@ -493,24 +488,21 @@ class plugin_base
 		$node->c = '<?php } ?>';
 	}
 	
-	static public function TAG_PRE_extends(node $node) {
-		$node->mustclose = false;
+	static public function TAG_OPENCLOSE_extends(node $node) {
 		$node->checkParams(false, array(
 			'name' => array('string', null, 'Required name of the template to extend'),
 		));
 		$node->node_parser->node_root = $node->ste->parse_file($node->params['name']);
 	}
 
-	static public function TAG_PRE_include(node $node) {
-		$node->mustclose = false;
+	static public function TAG_OPENCLOSE_include(node $node) {
 		$node->checkParams(false, array(
 			'name' => array('string', null, 'Required name of the template to extend'),
 		));
 		$node->setref($node->ste->parse_file($node->params['name']));
 	}
 	
-	static public function TAG_PRE_putblock(node $node) {
-		$node->mustclose = false;
+	static public function TAG_OPENCLOSE_putblock(node $node) {
 		$node->checkParams(false, array(
 			'id' => array('string', null),
 		));
@@ -518,8 +510,7 @@ class plugin_base
 		$node->b = array($node->ste->blocks[$node->params['id']]);
 	}
 
-	static public function TAG_PRE_addblock(node $node) {
-		$node->mustclose = true;
+	static public function TAG_OPEN_addblock(node $node) {
 		$node->checkParams(false, array(
 			'id' => array('id', null),
 		));
