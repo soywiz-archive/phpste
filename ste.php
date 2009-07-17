@@ -158,10 +158,14 @@ class ste
 		//return $call($node);
 	}
 	
+	protected function cleanup($text) {
+		return str_replace('?><?php', '', $text);
+	}
+	
 	public function show($name, $params = array()) {
 		if (!$this->cache->is_cached($name)) {
 			$result = $this->parse_file($name);
-			$this->cache->store($name, node::sgenerate($result), array_keys($this->parsed_files));
+			$this->cache->store($name, $this->cleanup(node::sgenerate($result)), array_keys($this->parsed_files));
 		}
 		$this->cache->execute($name, $params);
 	}
