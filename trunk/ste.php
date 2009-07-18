@@ -47,7 +47,7 @@ class cache_file extends cache_null implements cache
 	public function store($name, $data, $files) {
 		$file = $this->__locate($name);
 		{
-			$rfiles = array(); $files[] = __FILE__;
+			$rfiles = array();
 			foreach ($files as $cfile) $rfiles[$cfile] = filemtime($cfile);
 		}
 		@file_put_contents("{$file}.info", serialize($rfiles));
@@ -86,7 +86,12 @@ class ste
 		if (!($cache instanceof cache)) {
 			throw(new \Exception("Cache must implement the interface 'ste\\cache'."));
 		}
-
+		
+		$this->loadBasePlugins();
+	}
+	
+	protected function loadBasePlugins()
+	{
 		// Load the base plugins.
 		$this->plugin('\\ste\\plugin_base');
 	}
@@ -171,10 +176,20 @@ class ste
 		return $text;
 	}
 	
+	protected function setAdditionalCacheFiles(&$files) {
+		$files[] = __FILE__;
+	}
+	
 	public function show($name, $params = array()) {
 		if (!$this->cache->is_cached($name)) {
 			$result = $this->parse_file($name);
-			$this->cache->store($name, $this->cleanup(node::sgenerate($result)), array_keys($this->parsed_files));
+			$files = array_keys($this->parsed_files);
+			$this->setAdditionalCacheFiles($files);
+			$this->cache->store(
+				$name,
+				$this->cleanup(node::sgenerate($result)),
+				$files
+			);
 		}
 		$this->cache->execute($name, $params);
 	}
@@ -489,11 +504,16 @@ class plugin_base
 	static public function TAG_OPEN_foreach(node $node) {
 		$node->checkParams(false, array(
 			'list' => array('expr', null),
+			'key'  => array('var', ''),
 			'var'  => array('var', null),
 		));
 
 		$p = &$node->params;
-		$node->a = "<?php foreach ({$p['list']} as {$p['var']}) { ?>";
+		if (strlen($p['key'])) {
+			$node->a = "<?php foreach ({$p['list']} as {$p['key']} => {$p['var']}) { ?>";
+		} else {
+			$node->a = "<?php foreach ({$p['list']} as {$p['var']}) { ?>";
+		}
 		$node->c = '<?php } ?>';
 	}
 	
@@ -508,7 +528,7 @@ class plugin_base
 		$node->checkParams(false, array(
 			'name' => array('string', null, 'Required name of the template to extend'),
 		));
-		$node->setref($node->ste->parse_file($node->params['name']));
+		$node->b = array($node->ste->parse_file($node->params['name']));
 	}
 	
 	static public function TAG_OPENCLOSE_putblock(node $node) {
