@@ -166,7 +166,9 @@ class ste
 	}
 	
 	protected function cleanup($text) {
-		return str_replace('?><?php', '', $text);
+		$text = str_replace('?><?php', '', $text);
+		$text = preg_replace('/<\\?=(.*);?\\?>/Umsi', '<?php echo $1; ?>', $text);
+		return $text;
 	}
 	
 	public function show($name, $params = array()) {
@@ -301,6 +303,7 @@ class node_parser
 
 class node
 {
+	public $id;
 	public $is_root = false;
 	public $parent_node = null;
 	public $node_parser, $ste;
@@ -323,7 +326,7 @@ class node
 		return $s;
 	}
 	
-	public function setref($that) {
+	public function setref(&$that) {
 		if ($this !== $that) $this->ref = $that;
 	}
 
@@ -333,6 +336,8 @@ class node
 	}
 
 	public function __construct(node_parser $node_parser) {
+		static $lastid = 0;
+		$this->id = $lastid++;
 		$this->node_parser = $node_parser;
 		$this->ste = $node_parser->ste;
 	}
@@ -404,7 +409,7 @@ class plugin_base
 			'id' => array('id', null),
 		));
 
-		$block = &$node->ste->blocks[$block_id = $node->params['id']];
+		$block = &$node->ste->blocks[$node->params['id']];
 
 		if (!isset($block)) {
 			$block = $node;
@@ -413,8 +418,12 @@ class plugin_base
 		}
 	}
 
-	static public function TAG_OPEN_blockdef(node $node) {
-		static::TAG_block(clone $node);
+	static public function TAG_CLOSE_blockdef(node $node) {
+		$node->checkParams(false, array(
+			'id' => array('id', null),
+		));
+
+		$node->ste->blocks[$node->params['id']] = clone $node;
 		$node->emptytag();
 	}
 	
@@ -479,7 +488,7 @@ class plugin_base
 
 	static public function TAG_OPEN_foreach(node $node) {
 		$node->checkParams(false, array(
-			'list' => array('var', null),
+			'list' => array('expr', null),
 			'var'  => array('var', null),
 		));
 
@@ -507,7 +516,7 @@ class plugin_base
 			'id' => array('string', null),
 		));
 
-		$node->b = array($node->ste->blocks[$node->params['id']]);
+		$node->setref($node->ste->blocks[$node->params['id']]);
 	}
 
 	static public function TAG_OPEN_addblock(node $node) {
