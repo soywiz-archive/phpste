@@ -153,6 +153,9 @@ class ste
 	public function process_block(node $node, $step, $line = -1) {
 		$node_name = $node->name;
 
+		// Ignore.
+		if ($node_name == null) return;
+
 		if ($line == -1) $line = $node->line;
 		if (!isset($this->tags[$node_name])) throw(new \Exception("Unknown tag '{$node_name}' at line {$line}"));
 		
@@ -280,7 +283,9 @@ class node_parser
 					// Variables.
 					case '$':
 						$node = $this->createnode($current_line);
-						$node->a = '<?php echo ' . substr($c, 1, -1) . '; ?>';
+						$node->parent_node = $parent_node;
+						$node->name = null;
+						$node->b = array('<?php echo ' . substr($c, 1, -1) . '; ?>');
 						$parent_node->add($node);
 					break;
 					// Opening node.
