@@ -102,9 +102,10 @@ class ste
 	}
 	
 	public function get_path($name) {
-		$rname = realpath("{$this->path}/{$name}.php");
+		$rname = realpath($vname = "{$this->path}/{$name}.php");
+		if (!file_exists($vname)) throw(new \Exception("File '{$vname}' doesn't exists."));
 		if (substr_compare($this->path, $rname, 0, strlen($this->path), false) != 0) {
-			throw(new \Exception("Template '{$rname}' out of the safe path '{$this->path}'."));
+			throw(new \Exception("Template '{$name}' out of the safe path '{$this->path}'."));
 		}
 		return $rname;
 	}
@@ -350,9 +351,20 @@ class node
 		if ($this !== $that) $this->ref = $that;
 	}
 
-	public function add($v) {
-		if (isset($this->ref)) return $this->ref->add($v);
-		$this->b[] = $v;
+	public function add($v, $pos = 'after') {
+		if (isset($this->ref)) return $this->ref->add($v, $pos);
+		switch ($pos) {
+			case 'after' : array_push   ($this->b, $v); break;
+			case 'before': array_unshift($this->b, $v); break;
+			default:
+				if ($pos < 0) $pos += count($this->b);
+				$this->b = array_merge(
+					array_slice($this->b, 0, $pos),
+					array($v),
+					array_slice($this->b, $pos)
+				);
+			break;
+		}
 	}
 
 	public function __construct(node_parser $node_parser) {
@@ -546,16 +558,18 @@ class plugin_base
 
 	static public function TAG_OPEN_addblock(node $node) {
 		$node->checkParams(false, array(
-			'id' => array('id', null),
+			'id'       => array('id', null),
+			'position' => array('string', 'after'),
 		));
 
-		$block_id = $node->params['id'];
-		$block = &$node->ste->blocks[$block_id];
+		$p = &$node->params;
+		$block = &$node->ste->blocks[$p['id']];
 		if (!isset($block)) {
 			$block = $node;
 		} else {
-			$block->add("\n");
-			$block->add($node);
+			if ($p['position'] == 'after') $block->add("\n");
+			$block->add($node, $p['position']);
+			if ($p['position'] == 'before') $block->add("\n");
 		}
 	}
 }
