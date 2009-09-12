@@ -5,7 +5,7 @@ interface cache
 {
 	public function is_cached($name);
 	public function store($name, $data, $files);
-	public function execute($name, &$params);
+	public function execute($name, &$params, $ste = null);
 }
 
 class cache_null implements cache
@@ -14,7 +14,7 @@ class cache_null implements cache
 
 	public function is_cached($name) { return false; }
 	public function store($name, $data, $files) { $this->memcache[$name] = $data; }
-	public function execute($name, &$params) {
+	public function execute($name, &$params, $ste = null) {
 		if (!isset($this->memcache[$name])) throw(new \Exception("Can't load template cache '{$name}'"));
 		extract($params);
 		eval('?>' . $this->memcache[$name]);
@@ -55,13 +55,13 @@ class cache_file extends cache_null implements cache
 		parent::store($name, $data, $files);
 	}
 
-	public function execute($name, &$params) {
+	public function execute($name, &$params, $ste = null) {
 		$file = $this->__locate($name);
 		if (is_readable($file)) {
 			extract($params);
 			require($file);
 		} else {
-			parent::execute($name, $params);
+			parent::execute($name, $params, $ste);
 		}
 	}
 }
@@ -76,6 +76,17 @@ class ste
 
 	protected $plugins_cached = array();
 	protected $parsed_files = array();
+	
+	public function dup() {
+		return clone $this;
+	}
+
+    public function __clone() {
+        $this->tags = array();
+		$this->blocks = array();
+		$this->plugins_cached = array();
+		$this->parsed_files = array();
+    }
 
 	public function __construct($path, $cache = null) {
 		if ($cache === null) $cache = new cache_null();
@@ -195,7 +206,7 @@ class ste
 				$files
 			);
 		}
-		$this->cache->execute($name, $params);
+		$this->cache->execute($name, $params, $this);
 	}
 	
 	public function get($name, $params = array()) {
