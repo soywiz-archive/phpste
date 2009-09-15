@@ -73,6 +73,7 @@ class ste
 	public $plugins = array();
 	public $tags    = array();
 	public $blocks  = array();
+	public $strip_utf8_and_spaces = true;
 
 	protected $plugins_cached = array();
 	protected $parsed_files = array();
@@ -188,6 +189,10 @@ class ste
 	protected function cleanup($text) {
 		$text = str_replace('?><?php', '', $text);
 		$text = preg_replace('/<\\?=(.*);?\\?>/Umsi', '<?php echo $1; ?>', $text);
+		if ($this->strip_utf8_and_spaces) {
+			$text = trim($text);
+			if (substr($text, 0, 3) == "\xEF\xBB\xBF") $text = trim(substr($text, 3));
+		}
 		return $text;
 	}
 	
